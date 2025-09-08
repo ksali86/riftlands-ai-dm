@@ -156,7 +156,7 @@ class Narrator:
 class RiftlandsBot(commands.Bot):
     def __init__(self):
         super().__init__(command_prefix="!", intents=INTENTS)
-        self.tree = app_commands.CommandTree(self)
+        # self.tree = app_commands.CommandTree(self)
         self.state = load_state()
         self.narrator = Narrator(USE_OPENAI, OPENAI_KEY)
 
