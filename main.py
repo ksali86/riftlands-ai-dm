@@ -1,23 +1,6 @@
 #!/usr/bin/env python3
 """
-Riftlands AI DM — Discord Bot (5e, Async, Transparent Rolls + Narrative)
-Author: Khurem's Custom Setup
-
-Features:
-- Async D&D 5e gameplay via Discord
-- Scene-based narration with cinematic AI outcomes (optional, OpenAI-driven)
-- Handles /check, /attack, /save, /inventory, /recap, and /start commands
-- Transparent dice rolls + automatic narrative updates
-- Optimised for GitHub + Railway deployment
-
-Requirements:
-- Python 3.9+
-- discord.py
-- openai (optional)
-- python-dotenv
-
-Start command:
-    python3 main.py
+Riftlands AI DM — Discord Bot (5e, Async, Slash Commands Fixed)
 """
 
 import os, re, json, random, datetime as dt
@@ -42,6 +25,7 @@ INTENTS.message_content = True
 INTENTS.members = True
 
 STATE_FILE = "riftlands_state.json"
+
 
 # ---------------- State Management ----------------
 def load_state() -> Dict[str, Any]:
@@ -69,6 +53,7 @@ def gstate_for(state: Dict[str, Any], guild_id: int) -> Dict[str, Any]:
             }
         }
     return state[gid]
+
 
 # ---------------- Dice Utilities ----------------
 DICE_RE = re.compile(r"(?:(\d+))?d(\d+)([+-]\d+)?", re.IGNORECASE)
@@ -104,6 +89,7 @@ def roll_expr(expr: str) -> Dict[str, Any]:
         i += 1
     breakdown = " + ".join(out_parts)
     return {"total": total, "breakdown": breakdown}
+
 
 # ---------------- Narration ----------------
 class Narrator:
@@ -152,18 +138,22 @@ class Narrator:
                 lines.append(f"- **{a.get('name')}**: _{a.get('content')}_")
             return "\n".join(lines)
 
+
 # ---------------- Bot Setup ----------------
 class RiftlandsBot(commands.Bot):
     def __init__(self):
         super().__init__(command_prefix="!", intents=INTENTS)
-        # self.tree = app_commands.CommandTree(self)
         self.state = load_state()
         self.narrator = Narrator(USE_OPENAI, OPENAI_KEY)
 
     async def setup_hook(self):
+        # Force sync slash commands on every restart
         await self.tree.sync()
+        print("✅ Slash commands synced!")
+
 
 bot = RiftlandsBot()
+
 
 # ---------------- Commands ----------------
 @bot.tree.command(name="start", description="Start a new scene.")
@@ -182,6 +172,7 @@ async def start(interaction: discord.Interaction, title: str, prompt: str):
         await log_channel.send(f"## {title}\n{prompt}\n\n*Post your moves in* #player-actions")
     await interaction.followup.send("Scene started!", ephemeral=True)
 
+
 @bot.tree.command(name="check", description="Make a skill or ability check.")
 async def check(interaction: discord.Interaction, skill: str, modifier: Optional[str] = "+0"):
     res = roll_expr(f"d20{modifier}")
@@ -191,6 +182,7 @@ async def check(interaction: discord.Interaction, skill: str, modifier: Optional
         await dice_channel.send(msg)
     else:
         await interaction.response.send_message(msg)
+
 
 @bot.tree.command(name="attack", description="Roll attack + damage.")
 async def attack(interaction: discord.Interaction, weapon: str, to_hit: str, dmg: str):
@@ -206,6 +198,7 @@ async def attack(interaction: discord.Interaction, weapon: str, to_hit: str, dmg
         await dice_channel.send(msg)
     else:
         await interaction.response.send_message(msg)
+
 
 @bot.tree.command(name="resolve", description="Resolve the current scene.")
 async def resolve(interaction: discord.Interaction):
@@ -226,6 +219,22 @@ async def resolve(interaction: discord.Interaction):
     save_state(bot.state)
     await interaction.response.send_message("Scene resolved!", ephemeral=True)
 
+
+@bot.tree.command(name="recap", description="Get a recap of the last few scenes.")
+async def recap(interaction: discord.Interaction):
+    g = gstate_for(bot.state, interaction.guild.id)
+    scenes = g.get("scenes", [])
+    if not scenes:
+        await interaction.response.send_message("No scenes to recap yet.", ephemeral=True)
+        return
+
+    last_scenes = scenes[-3:]
+    recap_text = "**Recent Scenes Recap:**\n" + "\n\n".join(
+        [f"**{s['title']}**: {s['summary']}" for s in last_scenes]
+    )
+    await interaction.response.send_message(recap_text, ephemeral=True)
+
+
 @bot.event
 async def on_message(message: discord.Message):
     if message.author.bot:
@@ -242,11 +251,13 @@ async def on_message(message: discord.Message):
         await message.add_reaction("✅")
     await bot.process_commands(message)
 
+
 def main():
     if not TOKEN:
         print("ERROR: DISCORD_BOT_TOKEN not set.")
         return
     bot.run(TOKEN)
+
 
 if __name__ == "__main__":
     main()
