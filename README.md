@@ -1,5 +1,4 @@
-# Riftlands AI DM v1.3.9 — Diagnostic Sync++
-- Delays sync until commands are fully ready
-- Prints how many commands are loaded before syncing
-- Lists each registered command name + description
-- Wipes all global & guild commands before syncing fresh
+# Riftlands AI DM v1.4.0 — Force Sync
+- Wipes all old commands (global + guild)
+- Pushes commands back to Discord after clearing
+- Logs each synced command name

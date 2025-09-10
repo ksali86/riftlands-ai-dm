@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# Riftlands AI DM v1.3.9 — Diagnostic Sync++
-# Adds full debug logging for slash command registration
+# Riftlands AI DM v1.4.0 — Force Sync
+# Ensures slash commands are fully re-synced after clearing
 
 import os, json, random, datetime as dt
 from typing import Dict, Any, List, Optional, DefaultDict
@@ -81,8 +81,7 @@ bot.narrator = Narrator()
 def get_channel(guild: discord.Guild, name: str) -> Optional[discord.TextChannel]:
     return discord.utils.get(guild.text_channels, name=name)
 
-async def hard_reset_and_sync():
-    # Show what commands are currently in the tree before syncing
+async def hard_reset_and_force_sync():
     cmds = bot.tree.get_commands()
     print(f"🌿 Loaded {len(cmds)} commands into tree before sync:")
     for cmd in cmds:
@@ -103,6 +102,8 @@ async def hard_reset_and_sync():
         try:
             await bot.http.bulk_upsert_guild_commands(bot.user.id, guild.id, [])
             print(f"🧹 Cleared ALL guild commands for {guild.name} ({guild.id})")
+
+            # Now push commands back to Discord
             synced = await bot.tree.sync(guild=guild)
             print(f"🔄 Synced {len(synced)} commands to {guild.name}:")
             for cmd in synced:
@@ -113,9 +114,9 @@ async def hard_reset_and_sync():
 @bot.event
 async def on_ready():
     print(f"🤖 Logged in as {bot.user} (ID: {bot.user.id})")
-    await bot.change_presence(activity=discord.Game(name="Riftlands v1.3.9 Diagnostic Sync++"))
+    await bot.change_presence(activity=discord.Game(name="Riftlands v1.4.0 Force Sync"))
     await bot.wait_until_ready()
-    await hard_reset_and_sync()
+    await hard_reset_and_force_sync()
 
 # --- Commands ---
 
