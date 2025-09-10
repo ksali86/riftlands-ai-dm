@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-# Riftlands AI DM v1.3.8 — Late Sync Fix
-# Ensures slash commands properly register and sync after startup
+# Riftlands AI DM v1.3.9 — Diagnostic Sync++
+# Adds full debug logging for slash command registration
 
 import os, json, random, datetime as dt
 from typing import Dict, Any, List, Optional, DefaultDict
@@ -62,7 +62,6 @@ def roll(expr: str) -> Dict[str, Any]:
 # Narration fallback
 class Narrator:
     def fallback(self, title: str, prompt: str, actions: List[Dict[str,str]]) -> str:
-        print("🌀 [Narrator] start")
         grouped: DefaultDict[str, List[str]] = defaultdict(list)
         for a in actions[-20:]:
             grouped[a.get("name","Someone")].append(a.get("content","..."))
@@ -73,9 +72,7 @@ class Narrator:
             lines.append(f"**{name}** {last}")
         lines.append("\nThe Riftstorm growls; ghostlight drifts across broken stone.")
         lines.append("\n**Choices:**\n1. Press the advantage.\n2. Regroup.\n3. Investigate.")
-        text = "\n".join(lines)
-        print(f"🌀 [Narrator] done ({len(text)} chars)")
-        return text
+        return "\n".join(lines)
 
 bot = commands.Bot(command_prefix="!", intents=INTENTS)
 bot.state = load_state()
@@ -85,27 +82,38 @@ def get_channel(guild: discord.Guild, name: str) -> Optional[discord.TextChannel
     return discord.utils.get(guild.text_channels, name=name)
 
 async def hard_reset_and_sync():
+    # Show what commands are currently in the tree before syncing
+    cmds = bot.tree.get_commands()
+    print(f"🌿 Loaded {len(cmds)} commands into tree before sync:")
+    for cmd in cmds:
+        print(f"   • {cmd.name}: {cmd.description or '(no description)'}")
+
+    if len(cmds) == 0:
+        print("⚠️ No commands detected in tree — Discord will show none!")
+
     # Clear ALL global commands
     try:
         await bot.http.bulk_upsert_global_commands(bot.user.id, [])
         print("🧹 Cleared ALL global commands")
     except Exception as e:
         print("⚠️ Failed clearing global commands:", e)
+
     # Wipe and re-sync per guild
     for guild in bot.guilds:
         try:
             await bot.http.bulk_upsert_guild_commands(bot.user.id, guild.id, [])
             print(f"🧹 Cleared ALL guild commands for {guild.name} ({guild.id})")
-            # Wait until all commands are registered before syncing
-            cmds = await bot.tree.sync(guild=guild)
-            print(f"🔄 Synced {len(cmds)} fresh commands to {guild.name} ({guild.id})")
+            synced = await bot.tree.sync(guild=guild)
+            print(f"🔄 Synced {len(synced)} commands to {guild.name}:")
+            for cmd in synced:
+                print(f"   • {cmd.name}")
         except Exception as e:
             print(f"⚠️ Failed syncing for guild {guild.name} ({guild.id}):", e)
 
 @bot.event
 async def on_ready():
     print(f"🤖 Logged in as {bot.user} (ID: {bot.user.id})")
-    await bot.change_presence(activity=discord.Game(name="Riftlands v1.3.8 Late Sync"))
+    await bot.change_presence(activity=discord.Game(name="Riftlands v1.3.9 Diagnostic Sync++"))
     await bot.wait_until_ready()
     await hard_reset_and_sync()
 
@@ -129,27 +137,27 @@ async def debug_scene(inter: discord.Interaction):
 @bot.tree.command(name="resolve", description="Resolve the current scene (breadcrumb debug).")
 async def resolve_cmd(inter: discord.Interaction):
     await inter.response.defer(ephemeral=True)
-    await inter.followup.send("🟢 Step 1: Deferred", ephemeral=True); print("✅ [Resolve] Step1")
+    await inter.followup.send("🟢 Step 1: Deferred", ephemeral=True)
     g = gstate_for(bot.state, inter.guild.id)
-    await inter.followup.send("🟢 Step 2: Loaded state", ephemeral=True); print("✅ [Resolve] Step2")
+    await inter.followup.send("🟢 Step 2: Loaded state", ephemeral=True)
     scene = g.get("current_scene", {})
     actions = scene.get("actions", [])
-    await inter.followup.send(f"🟢 Step 3: {len(actions)} actions", ephemeral=True); print("✅ [Resolve] Step3")
+    await inter.followup.send(f"🟢 Step 3: {len(actions)} actions", ephemeral=True)
     text = bot.narrator.fallback(scene.get("title","Scene"), scene.get("prompt",""), actions)
-    await inter.followup.send("🟢 Step 4: Narration built", ephemeral=True); print("✅ [Resolve] Step4")
+    await inter.followup.send("🟢 Step 4: Narration built", ephemeral=True)
     ch = get_channel(inter.guild, "adventure-log") or inter.channel
     try:
         await ch.send(text)
-        await inter.followup.send("🟢 Step 5: Narration posted", ephemeral=True); print("✅ [Resolve] Step5")
+        await inter.followup.send("🟢 Step 5: Narration posted", ephemeral=True)
     except Exception as e:
-        await inter.followup.send(f"❌ Step 5 failed: {e}", ephemeral=True); print("❌ [Resolve] Post error:", e); return
+        await inter.followup.send(f"❌ Step 5 failed: {e}", ephemeral=True)
+        return
     g["scenes"].append({"title": scene.get("title") or "Scene","summary": text[:500],"actions": actions,"resolved_at": dt.datetime.utcnow().isoformat()})
     g["current_scene"]["actions"] = []
     save_state(bot.state)
-    await inter.followup.send("🟢 Step 6: Scene saved/reset", ephemeral=True); print("✅ [Resolve] Step6")
+    await inter.followup.send("🟢 Step 6: Scene saved/reset", ephemeral=True)
     await inter.followup.send("✅ Done", ephemeral=True)
 
-# Act + Attack
 @app_commands.choices(skill=[app_commands.Choice(name=s.title(), value=s) for s in [
     "acrobatics","animal handling","arcana","athletics","deception","history","insight",
     "intimidation","investigation","medicine","nature","perception","performance","persuasion",

@@ -1,5 +1,5 @@
-# Riftlands AI DM v1.3.8 — Late Sync Fix
-- Properly wipes ALL old commands
-- Waits until commands are registered before syncing
-- Forces fresh guild-only sync
-- Includes /resolve, /resolve-test, /debug-scene, /act, /attack
+# Riftlands AI DM v1.3.9 — Diagnostic Sync++
+- Delays sync until commands are fully ready
+- Prints how many commands are loaded before syncing
+- Lists each registered command name + description
+- Wipes all global & guild commands before syncing fresh
