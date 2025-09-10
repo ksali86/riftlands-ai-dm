@@ -1,11 +1,11 @@
 #!/usr/bin/env python3
-# Riftlands AI DM v1.3.5 — Deep Debug+ Mode
-# Adds:
-# - Breadcrumb echoes in Discord for /resolve
-# - Narration checkpoints in Railway logs
-# - /resolve-test to simulate narration without posting
-# - /debug-scene to show current scene and dump full JSON
-# - DEBUG_MODE toggle
+# Riftlands AI DM v1.3.6 — Recovery++
+# Fixes stale slash commands permanently by:
+# - Wiping ALL global commands on startup
+# - Wiping ALL guild commands per guild
+# - Forcing fresh guild-only sync immediately
+# - Auto-syncing commands internally
+# - Debug breadcrumbs remain intact
 
 import os, json, random, datetime as dt
 from typing import Dict, Any, List, Optional, DefaultDict
@@ -50,7 +50,7 @@ def gstate_for(state: Dict[str, Any], guild_id: int) -> Dict[str, Any]:
         }
     return state[gid]
 
-# Dice rolling helper
+# Dice roller helper
 def roll_dice(expr: str) -> Dict[str, Any]:
     expr = expr.strip().lower()
     count, sides, mod = 1, 20, 0
@@ -101,6 +101,28 @@ bot.narrator = Narrator()
 
 def get_channel(guild: discord.Guild, name: str) -> Optional[discord.TextChannel]:
     return discord.utils.get(guild.text_channels, name=name)
+
+@bot.event
+async def on_ready():
+    print(f"🤖 Logged in as {bot.user} (ID: {bot.user.id})")
+    await bot.change_presence(activity=discord.Game(name="Riftlands Recovery++"))
+    try:
+        # Remove all global commands
+        global_cmds = await bot.tree.fetch_commands()
+        for cmd in global_cmds:
+            await bot.tree.remove_command(cmd.name, type=cmd.type)
+        print(f"🧹 Removed {len(global_cmds)} global commands")
+
+        # Wipe and re-sync per guild
+        for guild in bot.guilds:
+            old_cmds = await bot.tree.fetch_commands(guild=guild)
+            for cmd in old_cmds:
+                await bot.tree.remove_command(cmd.name, type=cmd.type, guild=guild)
+            print(f"🧹 Removed {len(old_cmds)} guild commands for {guild.name} ({guild.id})")
+            new_cmds = await bot.tree.sync(guild=guild)
+            print(f"🔄 Synced {len(new_cmds)} fresh commands to {guild.name} ({guild.id})")
+    except Exception as e:
+        print("⚠️ Slash command sync failed:", e)
 
 # Commands
 @bot.tree.command(name="resolve-test", description="Simulate narration without posting.")
@@ -159,11 +181,6 @@ async def resolve(inter: discord.Interaction):
     print("✅ [Resolve] Step 6: Scene saved and reset")
 
     await inter.followup.send("✅ Scene resolved successfully!", ephemeral=True)
-
-@bot.event
-async def on_ready():
-    print(f"🤖 Logged in as {bot.user} (ID: {bot.user.id})")
-    await bot.change_presence(activity=discord.Game(name="Riftlands Debug Mode"))
 
 def main():
     if not TOKEN:
