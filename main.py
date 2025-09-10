@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-# Riftlands AI DM v1.3.2 — Fallback-First Hotfix
-# - OpenAI completely disabled for now (only fallback narration)
-# - /resolve posts instantly, no hanging
-# - Removed ephemeral "thinking" response when AI disabled
-# - Force global re-sync of commands so dropdowns appear
-# - /act includes dropdown for all 18 D&D skills
+# Riftlands AI DM v1.3.3 — Command Refresh Hotfix
+# - Fallback-only narration (no OpenAI) for instant /resolve
+# - Force per-guild slash command sync on startup
+# - Add GM-only /sync to refresh commands immediately if "command outdated"
+# - /act includes dropdown for all 18 5e skills
 
 import os, re, json, random, datetime as dt
 from typing import Dict, Any, List, Optional, DefaultDict
@@ -42,7 +41,7 @@ def gstate_for(state: Dict[str, Any], guild_id: int) -> Dict[str, Any]:
         state[gid] = {
             "players": {}, "inventory": {}, "scenes": [],
             "current_scene": {"title": "", "prompt": "", "opened_at": "", "actions": []},
-            "settings": {"ai_narration": False}, # AI disabled entirely
+            "settings": {"ai_narration": False},  # fallback only
             "sheets_cache": {}
         }
     return state[gid]
@@ -62,14 +61,16 @@ def roll_expr(expr: str) -> Dict[str, Any]:
             count = int(m.group(1) or '1'); sides = int(m.group(2)); mod = int(m.group(3) or '0')
             rolls = [random.randint(1, sides) for _ in range(count)]
             subtotal = sum(rolls) + mod; total += subtotal
-            parts.append(f"{count}d{sides}{mod:+}" if mod else f"{count}d{sides}={rolls} → {subtotal}")
+            label = f"{count}d{sides}" if count != 1 else f"d{sides}"
+            modtxt = f"{mod:+}" if mod else ""
+            parts.append(f"{label}={rolls}{modtxt} → {subtotal}")
         else:
             try:
                 v = int(t); total += v; parts.append(str(v))
             except: parts.append('?' + t)
     return {"total": total, "breakdown": " + ".join(parts)}
 
-# ---------- Narration (Fallback only) ----------
+# ---------- Narrator (Fallback only) ----------
 class Narrator:
     def fallback(self, scene_title: str, prompt: str, actions: List[Dict[str,str]]) -> str:
         by_player: DefaultDict[str, List[str]] = defaultdict(list)
@@ -93,7 +94,6 @@ class Narrator:
         lines.append("\n**Choices:**\n1. " + hooks[0] + "\n2. " + hooks[1] + "\n3. " + hooks[2])
         return "\n".join(lines)
 
-# ---------- GM detection ----------
 def is_gm(inter: discord.Interaction) -> bool:
     if not inter.guild: return True
     if inter.guild.owner_id == inter.user.id: return True
@@ -110,8 +110,17 @@ class RiftlandsBot(commands.Bot):
         self.narrator = Narrator()
 
     async def setup_hook(self):
-        cmds = await self.tree.sync()
-        print(f"✅ Synced {len(cmds)} commands globally.")
+        # Global sync first
+        gcmds = await self.tree.sync()
+        print(f"✅ Synced {len(gcmds)} commands globally.")
+        # Then copy globals to each guild & sync (instant refresh)
+        for guild in self.guilds:
+            try:
+                self.tree.copy_global_to(guild=guild)
+                gc = await self.tree.sync(guild=guild)
+                print(f"🔄 Synced {len(gc)} commands to guild {guild.name} ({guild.id}).")
+            except Exception as e:
+                print("Guild sync error:", e)
 
 bot = RiftlandsBot()
 
@@ -214,7 +223,15 @@ async def recap_cmd(inter: discord.Interaction):
     recap = "**Recent Scenes Recap:**\n" + "\n\n".join([f"**{s['title']}**: {s['summary']}" for s in last])
     await inter.response.send_message(recap, ephemeral=False)
 
-# Events
+# GM-only: force command sync in this guild
+@bot.tree.command(name="sync", description="GM: force-refresh slash commands in this server.")
+async def sync_cmd(inter: discord.Interaction):
+    if not is_gm(inter):
+        await inter.response.send_message("Only the GM can sync commands.", ephemeral=True); return
+    bot.tree.copy_global_to(guild=inter.guild)
+    cmds = await bot.tree.sync(guild=inter.guild)
+    await inter.response.send_message(f"🔄 Synced {len(cmds)} commands to this server.", ephemeral=True)
+
 @bot.event
 async def on_ready():
     print(f"🤖 Logged in as {bot.user} (ID: {bot.user.id})")
