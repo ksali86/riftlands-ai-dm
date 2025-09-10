@@ -1,5 +1,5 @@
-# Riftlands AI DM v1.3.3 — Command Refresh Hotfix
-- Fallback-only narration: /resolve is instant
-- Forces per-guild command sync on startup (prevents "command outdated")
-- Adds GM-only /sync to refresh commands immediately
-- /act includes dropdown for all 18 D&D skills
+# Riftlands AI DM v1.3.4 — Stability + Auto-Integration
+- Guild-only commands (fixes duplicate slash commands)
+- /resolve fixed: instant fallback narration + confirmation
+- Auto-modifiers restored from pinned sheets
+- Auto HP & AC detection from sheets into narration and rolls
