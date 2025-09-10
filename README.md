@@ -1,16 +1,17 @@
-# Riftlands AI DM v1.3
+# Riftlands AI DM v1.3 (Full Build)
 
-## Features
-- /act — Cinematic actions + results in #player-actions (auto-modifiers from pinned sheets)
-- /resolve — Uses AI narration or cinematic fallback narration with player hooks
-- /recap — Instant cinematic summaries of the last 3 scenes
-- /narration — GM toggle between AI narration and fallback mode
-- /force-resolve — GM-only manual narration override
-- /scene-status — GM dashboard showing scene details, player actions, modifiers, and missing data
+## Commands
+- `/act description:"text" roll:<none/check/attack> [skill] [modifier] [weapon] [to_hit] [damage]`
+- `/check <skill> <+mod>`
+- `/attack <weapon> <+tohit> <damage>`
+- `/start <title> <prompt>` (GM)
+- `/resolve` — AI (if enabled) or cinematic fallback + hooks
+- `/narration enable:<true/false>` (GM)
+- `/force-resolve narration:"text"` (GM)
+- `/scene-status` (GM DM)
 
-### Highlights
-- Auto-modifier detection from pinned sheets
-- Live reindexing when sheets are updated
-- DM reminders for missing skill modifiers or damage dice
-- Cinematic fallback narration built from recent actions
-- Always ends with three player-choice hooks
+## Notes
+- Auto-modifiers from pinned sheets: put your sheet in your private `#<name>-sheet` channel and **pin** it.
+- The bot reindexes whenever pins change in `*-sheet` channels.
+- If stats are missing, it rolls with defaults and DMs the player a reminder.
+- Results go to `#dice-checks`, confirmations + descriptions to `#player-actions`.
