@@ -1,11 +1,9 @@
 #!/usr/bin/env python3
-# Riftlands AI DM v1.3.6 — Recovery++
-# Fixes stale slash commands permanently by:
-# - Wiping ALL global commands on startup
-# - Wiping ALL guild commands per guild
-# - Forcing fresh guild-only sync immediately
-# - Auto-syncing commands internally
-# - Debug breadcrumbs remain intact
+# Riftlands AI DM v1.3.7 — Command Reset
+# - Properly clears ALL global & guild slash commands via HTTP bulk upsert
+# - Forces fresh guild-only sync on startup
+# - Includes deep-debug /resolve breadcrumbs + /resolve-test + /debug-scene
+# - Also registers /act and /attack for basic play
 
 import os, json, random, datetime as dt
 from typing import Dict, Any, List, Optional, DefaultDict
@@ -16,13 +14,10 @@ from discord import app_commands
 from discord.ext import commands
 
 TOKEN = os.getenv("DISCORD_BOT_TOKEN") or os.getenv("DISCORD_TOKEN")
-DEBUG_MODE = True
-
 INTENTS = discord.Intents.default()
 INTENTS.message_content = True
 INTENTS.members = True
 INTENTS.guilds = True
-INTENTS.reactions = True
 
 STATE_FILE = "riftlands_state.json"
 
@@ -50,50 +45,40 @@ def gstate_for(state: Dict[str, Any], guild_id: int) -> Dict[str, Any]:
         }
     return state[gid]
 
-# Dice roller helper
-def roll_dice(expr: str) -> Dict[str, Any]:
+# Simple dice roller
+def roll(expr: str) -> Dict[str, Any]:
     expr = expr.strip().lower()
     count, sides, mod = 1, 20, 0
     if "d" in expr:
-        parts = expr.split("d")
-        if parts[0]: count = int(parts[0])
-        rest = parts[1]
-        if "+" in rest:
-            sides, mod = rest.split("+")
-            sides, mod = int(sides), int(mod)
-        elif "-" in rest:
-            sides, mod = rest.split("-")
-            sides, mod = int(sides), -int(mod)
+        a, b = expr.split("d", 1)
+        if a: count = int(a)
+        if "+" in b:
+            s, m = b.split("+", 1); sides, mod = int(s), int(m)
+        elif "-" in b:
+            s, m = b.split("-", 1); sides, mod = int(s), -int(m)
         else:
-            sides = int(rest)
+            sides = int(b)
     rolls = [random.randint(1, sides) for _ in range(count)]
     total = sum(rolls) + mod
     return {"total": total, "breakdown": f"{count}d{sides}{mod:+}={rolls} → {total}"}
 
 # Narration fallback
 class Narrator:
-    def fallback(self, title: str, prompt: str, actions: List[Dict[str, str]]) -> str:
-        print("🌀 [Narrator] Starting narration...")
+    def fallback(self, title: str, prompt: str, actions: List[Dict[str,str]]) -> str:
+        print("🌀 [Narrator] start")
         grouped: DefaultDict[str, List[str]] = defaultdict(list)
         for a in actions[-20:]:
-            grouped[a.get("name", "Someone")].append(a.get("content", "..."))
-        print("🌀 [Narrator] Grouped actions by player.")
+            grouped[a.get("name","Someone")].append(a.get("content","..."))
         lines = [f"🌫️ **{title or 'Scene'} — Resolution**\n"]
         for name, acts in grouped.items():
-            last = acts[-1] if acts else "moves silently"
+            last = acts[-1] if acts else "moves with purpose"
             if not last.endswith(('.', '!', '?')): last += "."
             lines.append(f"**{name}** {last}")
-        print("🌀 [Narrator] Generated player summaries.")
-        lines.append("\nThe Riftstorm rumbles above, shadows twisting in unnatural light.")
-        hooks = [
-            "Press the advantage and **pursue** the threat.",
-            "**Regroup** and protect the vulnerable.",
-            "**Investigate** the mystery before it slips away."
-        ]
-        lines.append("\n**Choices:**\n1. " + hooks[0] + "\n2. " + hooks[1] + "\n3. " + hooks[2])
-        final_text = "\n".join(lines)
-        print(f"🌀 [Narrator] Final narration ready ({len(final_text)} chars).")
-        return final_text
+        lines.append("\nThe Riftstorm growls; ghostlight drifts across broken stone.")
+        lines.append("\n**Choices:**\n1. Press the advantage.\n2. Regroup.\n3. Investigate.")
+        text = "\n".join(lines)
+        print(f"🌀 [Narrator] done ({len(text)} chars)")
+        return text
 
 bot = commands.Bot(command_prefix="!", intents=INTENTS)
 bot.state = load_state()
@@ -102,85 +87,102 @@ bot.narrator = Narrator()
 def get_channel(guild: discord.Guild, name: str) -> Optional[discord.TextChannel]:
     return discord.utils.get(guild.text_channels, name=name)
 
+async def hard_reset_commands():
+    # Clear ALL global commands
+    try:
+        await bot.http.bulk_upsert_global_commands(bot.user.id, [])
+        print("🧹 Cleared ALL global commands")
+    except Exception as e:
+        print("⚠️ Failed clearing global commands:", e)
+    # For every guild, clear then sync
+    for guild in bot.guilds:
+        try:
+            await bot.http.bulk_upsert_guild_commands(bot.user.id, guild.id, [])
+            print(f"🧹 Cleared ALL guild commands for {guild.name} ({guild.id})")
+            synced = await bot.tree.sync(guild=guild)
+            print(f"🔄 Synced {len(synced)} fresh commands to {guild.name} ({guild.id})")
+        except Exception as e:
+            print(f"⚠️ Failed syncing for guild {guild.name} ({guild.id}):", e)
+
 @bot.event
 async def on_ready():
     print(f"🤖 Logged in as {bot.user} (ID: {bot.user.id})")
-    await bot.change_presence(activity=discord.Game(name="Riftlands Recovery++"))
-    try:
-        # Remove all global commands
-        global_cmds = await bot.tree.fetch_commands()
-        for cmd in global_cmds:
-            await bot.tree.remove_command(cmd.name, type=cmd.type)
-        print(f"🧹 Removed {len(global_cmds)} global commands")
+    await bot.change_presence(activity=discord.Game(name="Riftlands v1.3.7 Command Reset"))
+    await hard_reset_commands()
 
-        # Wipe and re-sync per guild
-        for guild in bot.guilds:
-            old_cmds = await bot.tree.fetch_commands(guild=guild)
-            for cmd in old_cmds:
-                await bot.tree.remove_command(cmd.name, type=cmd.type, guild=guild)
-            print(f"🧹 Removed {len(old_cmds)} guild commands for {guild.name} ({guild.id})")
-            new_cmds = await bot.tree.sync(guild=guild)
-            print(f"🔄 Synced {len(new_cmds)} fresh commands to {guild.name} ({guild.id})")
-    except Exception as e:
-        print("⚠️ Slash command sync failed:", e)
+# ----- Commands -----
 
-# Commands
-@bot.tree.command(name="resolve-test", description="Simulate narration without posting.")
+# Debug helpers
+@bot.tree.command(name="resolve-test", description="Simulate narration without posting (diagnostic).")
 async def resolve_test(inter: discord.Interaction):
     await inter.response.send_message("✅ Resolve command triggered successfully (simulation mode).", ephemeral=True)
 
-@bot.tree.command(name="debug-scene", description="Show current scene + dump state to logs.")
+@bot.tree.command(name="debug-scene", description="Show current scene and dump JSON to logs.")
 async def debug_scene(inter: discord.Interaction):
     g = gstate_for(bot.state, inter.guild.id)
     scene = g.get("current_scene", {})
     actions = scene.get("actions", [])
-    msg = f"Scene title: {scene.get('title','Untitled')}\nActions recorded: {len(actions)}"
+    msg = f"Scene: {scene.get('title','Untitled')}\nActions recorded: {len(actions)}"
     for i, a in enumerate(actions[-5:], 1):
         msg += f"\n{i}. {a.get('name','Someone')}: {a.get('content','...')}"
-    print("📜 [Debug] Full state JSON dump:\n", json.dumps(g, indent=2))
-    await inter.response.send_message(msg or "No scene data found.", ephemeral=True)
+    print("📜 [Debug] State JSON:\n", json.dumps(g, indent=2))
+    await inter.response.send_message(msg, ephemeral=True)
 
-@bot.tree.command(name="resolve", description="Resolve the current scene with debug breadcrumbs.")
-async def resolve(inter: discord.Interaction):
+# Resolve with breadcrumbs
+@bot.tree.command(name="resolve", description="Resolve the current scene (breadcrumb debug).")
+async def resolve_cmd(inter: discord.Interaction):
     await inter.response.defer(ephemeral=True)
-    await inter.followup.send("🟢 Step 1: Deferred response", ephemeral=True)
-    print("✅ [Resolve] Step 1: Deferred response")
-
+    await inter.followup.send("🟢 Step 1: Deferred", ephemeral=True); print("✅ [Resolve] Step1")
     g = gstate_for(bot.state, inter.guild.id)
-    await inter.followup.send("🟢 Step 2: Loaded guild state", ephemeral=True)
-    print("✅ [Resolve] Step 2: Loaded guild state")
-
+    await inter.followup.send("🟢 Step 2: Loaded state", ephemeral=True); print("✅ [Resolve] Step2")
     scene = g.get("current_scene", {})
     actions = scene.get("actions", [])
-    await inter.followup.send(f"🟢 Step 3: Found {len(actions)} actions", ephemeral=True)
-    print(f"✅ [Resolve] Step 3: Found {len(actions)} actions")
-
-    narration = bot.narrator.fallback(scene.get("title","Scene"), scene.get("prompt",""), actions)
-    await inter.followup.send("🟢 Step 4: Narration generated", ephemeral=True)
-    print("✅ [Resolve] Step 4: Narration generated")
-
-    log_channel = get_channel(inter.guild, "adventure-log") or inter.channel
+    await inter.followup.send(f"🟢 Step 3: {len(actions)} actions", ephemeral=True); print("✅ [Resolve] Step3")
+    text = bot.narrator.fallback(scene.get("title","Scene"), scene.get("prompt",""), actions)
+    await inter.followup.send("🟢 Step 4: Narration built", ephemeral=True); print("✅ [Resolve] Step4")
+    ch = get_channel(inter.guild, "adventure-log") or inter.channel
     try:
-        await log_channel.send(narration)
-        await inter.followup.send("🟢 Step 5: Narration posted", ephemeral=True)
-        print("✅ [Resolve] Step 5: Narration posted")
+        await ch.send(text); await inter.followup.send("🟢 Step 5: Narration posted", ephemeral=True); print("✅ [Resolve] Step5")
     except Exception as e:
-        await inter.followup.send(f"❌ Step 5 failed: {e}", ephemeral=True)
-        print("❌ [Resolve] Failed posting narration:", e)
-        return
-
-    g["scenes"].append({
-        "title": scene.get("title") or "Scene",
-        "summary": narration[:500],
-        "actions": actions,
-        "resolved_at": dt.datetime.utcnow().isoformat()
-    })
+        await inter.followup.send(f"❌ Step 5 failed: {e}", ephemeral=True); print("❌ [Resolve] Post error:", e); return
+    g["scenes"].append({"title": scene.get("title") or "Scene","summary": text[:500],"actions": actions,"resolved_at": dt.datetime.utcnow().isoformat()})
     g["current_scene"]["actions"] = []
     save_state(bot.state)
-    await inter.followup.send("🟢 Step 6: Scene saved and reset", ephemeral=True)
-    print("✅ [Resolve] Step 6: Scene saved and reset")
+    await inter.followup.send("🟢 Step 6: Scene saved/reset", ephemeral=True); print("✅ [Resolve] Step6")
+    await inter.followup.send("✅ Done", ephemeral=True)
 
-    await inter.followup.send("✅ Scene resolved successfully!", ephemeral=True)
+# Minimal act & attack for convenience
+@app_commands.choices(skill=[app_commands.Choice(name=s.title(), value=s) for s in [
+    "acrobatics","animal handling","arcana","athletics","deception","history","insight",
+    "intimidation","investigation","medicine","nature","perception","performance","persuasion",
+    "religion","sleight of hand","stealth","survival"
+]])
+@bot.tree.command(name="act", description="Describe an action; optional skill check.")
+async def act_cmd(inter: discord.Interaction, description: str, skill: Optional[app_commands.Choice[str]] = None, modifier: Optional[str] = None):
+    g = gstate_for(bot.state, inter.guild.id)
+    g["current_scene"].setdefault("actions", []).append({"uid": str(inter.user.id), "name": inter.user.display_name, "content": description.strip(), "ts": dt.datetime.utcnow().isoformat()})
+    save_state(bot.state)
+    header = f"📝 **{inter.user.display_name}**: _{description.strip()}_"
+    if not skill:
+        await inter.response.send_message(header, ephemeral=False); return
+    # normalize modifier
+    mod = modifier.strip() if modifier else "+0"
+    if not mod.startswith(("+","-")): 
+        try:
+            n=int(mod); mod = f"+{n}" if n>=0 else str(n)
+        except: mod="+0"
+    r = roll(f"d20{mod}")
+    dice_ch = get_channel(inter.guild, "dice-checks") or inter.channel
+    await dice_ch.send(f"🎲 **{inter.user.display_name}** — **{skill.name} Check**\n{r['breakdown']}")
+    await inter.response.send_message(header + f"\n✅ **{skill.name} {mod}** — see **#dice-checks**.", ephemeral=False)
+
+@bot.tree.command(name="attack", description="Quick attack roll.")
+async def attack_cmd(inter: discord.Interaction, weapon: str, to_hit: str, damage: str):
+    atk = roll(f"d20{to_hit}")
+    dmg = roll(damage)
+    dice_ch = get_channel(inter.guild, "dice-checks") or inter.channel
+    await dice_ch.send(f"⚔️ **{inter.user.display_name}** — **{weapon.title()}**\nAttack: {atk['breakdown']}\nDamage: {dmg['breakdown']}")
+    await inter.response.send_message(f"⚔️ {weapon.title()} — see **#dice-checks**.", ephemeral=False)
 
 def main():
     if not TOKEN:
