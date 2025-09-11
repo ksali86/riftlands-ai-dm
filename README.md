@@ -1,39 +1,19 @@
-# Riftlands AI DM — v1.6
+# Riftlands AI DM — v1.6.1 (Debug Build)
 
-AI-powered Dungeon Master bot for Discord, built for Riftlands remote play.
+This is a **debug build** to confirm whether Railway detects the `DISCORD_TOKEN` variable.
 
-## Features
-- `/act` — Describe an action; optional skill check
-- `/attack` — Quick attack roll + damage
-- `/resolve` — Advance story + narration
-- `/resolve-test` — Simulate narration without posting
-- `/debug-scene` — Show current scene JSON + info
-- `/recap` — Summarise session state + last 3–5 actions
-- `/ping` — Check bot health and latency
-- `!ping` — **Message fallback** if slash commands aren’t synced
+## What's New
+- Prints if `DISCORD_TOKEN` exists.
+- Shows the **first 5 characters** of your token (safe).
+- If missing, **idles** instead of crashing → Railway stops infinite restart loops.
 
 ## Setup
+1. Go to Railway → **Variables**.
+2. Add:
+   - `DISCORD_TOKEN = <your bot token>`
+   - *(optional)* `RIFTLANDS_GUILD_ID = 1414706808802644131`
+3. Deploy this package.
+4. Check logs:
+   - **If working:** `✅ DISCORD_TOKEN detected (starts with: MTQxx...)`
+   - **If not:** `❌ DISCORD_TOKEN is missing!` → Railway isn’t seeing the token.
 
-### 1. Environment Variables
-```
-DISCORD_TOKEN=your_bot_token
-RIFTLANDS_GUILD_ID=1414706808802644131   # optional, prefer guild sync
-```
-
-### 2. Install Dependencies
-```bash
-pip install -r requirements.txt
-```
-
-### 3. Run Bot
-```bash
-python main.py
-```
-
-### 4. Deploy on Railway
-- Add `DISCORD_TOKEN` (required) + `RIFTLANDS_GUILD_ID` (optional) to Railway environment variables.
-- Deploy `riftlands_ai_dm_v1_6.zip`.
-- Watch logs for confirmation:
-```
-🔄 Synced 6 commands to Riftland Adventures
-```
