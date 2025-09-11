@@ -1,4 +1,4 @@
-# Riftlands AI DM — v1.5
+# Riftlands AI DM — v1.6
 
 AI-powered Dungeon Master bot for Discord, built for Riftlands remote play.
 
@@ -9,14 +9,8 @@ AI-powered Dungeon Master bot for Discord, built for Riftlands remote play.
 - `/resolve-test` — Simulate narration without posting
 - `/debug-scene` — Show current scene JSON + info
 - `/recap` — Summarise session state + last 3–5 actions
-
-## New in v1.5
-- **Safe two-phase slash-command sync**
-  - Wipes global + guild commands
-  - Waits for Discord propagation
-  - Retries sync up to 3 times
-  - Falls back to global sync if guild-only fails
-- Improved logging & error handling
+- `/ping` — Check bot health and latency
+- `!ping` — **Message fallback** if slash commands aren’t synced
 
 ## Setup
 
@@ -38,10 +32,8 @@ python main.py
 
 ### 4. Deploy on Railway
 - Add `DISCORD_TOKEN` (required) + `RIFTLANDS_GUILD_ID` (optional) to Railway environment variables.
-- Deploy `riftlands_ai_dm_v1_5.zip`.
+- Deploy `riftlands_ai_dm_v1_6.zip`.
 - Watch logs for confirmation:
 ```
 🔄 Synced 6 commands to Riftland Adventures
 ```
-
----
