@@ -1,4 +1,5 @@
-# Riftlands AI DM v1.4.0 — Force Sync
-- Wipes all old commands (global + guild)
-- Pushes commands back to Discord after clearing
-- Logs each synced command name
+# Riftlands AI DM v1.4.1 — Two-Phase Sync + Recap
+- Clears all commands globally and per guild
+- Waits 5 seconds for Discord to propagate
+- Force-syncs commands afterwards
+- Adds `/recap` command for scene summaries

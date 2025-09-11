@@ -1,8 +1,7 @@
 #!/usr/bin/env python3
-# Riftlands AI DM v1.4.0 — Force Sync
-# Ensures slash commands are fully re-synced after clearing
+# Riftlands AI DM v1.4.1 — Two-Phase Sync + Recap
 
-import os, json, random, datetime as dt
+import os, json, random, asyncio, datetime as dt
 from typing import Dict, Any, List, Optional, DefaultDict
 from collections import defaultdict
 
@@ -81,7 +80,7 @@ bot.narrator = Narrator()
 def get_channel(guild: discord.Guild, name: str) -> Optional[discord.TextChannel]:
     return discord.utils.get(guild.text_channels, name=name)
 
-async def hard_reset_and_force_sync():
+async def two_phase_sync():
     cmds = bot.tree.get_commands()
     print(f"🌿 Loaded {len(cmds)} commands into tree before sync:")
     for cmd in cmds:
@@ -90,20 +89,27 @@ async def hard_reset_and_force_sync():
     if len(cmds) == 0:
         print("⚠️ No commands detected in tree — Discord will show none!")
 
-    # Clear ALL global commands
+    # Phase 1: Wipe commands
     try:
         await bot.http.bulk_upsert_global_commands(bot.user.id, [])
         print("🧹 Cleared ALL global commands")
     except Exception as e:
         print("⚠️ Failed clearing global commands:", e)
 
-    # Wipe and re-sync per guild
     for guild in bot.guilds:
         try:
             await bot.http.bulk_upsert_guild_commands(bot.user.id, guild.id, [])
             print(f"🧹 Cleared ALL guild commands for {guild.name} ({guild.id})")
+        except Exception as e:
+            print(f"⚠️ Failed clearing guild commands for {guild.name} ({guild.id}):", e)
 
-            # Now push commands back to Discord
+    # Phase 2: Delay before syncing
+    print("⏳ Waiting 5 seconds before pushing commands...")
+    await asyncio.sleep(5)
+
+    # Phase 3: Push commands back to Discord
+    for guild in bot.guilds:
+        try:
             synced = await bot.tree.sync(guild=guild)
             print(f"🔄 Synced {len(synced)} commands to {guild.name}:")
             for cmd in synced:
@@ -114,9 +120,9 @@ async def hard_reset_and_force_sync():
 @bot.event
 async def on_ready():
     print(f"🤖 Logged in as {bot.user} (ID: {bot.user.id})")
-    await bot.change_presence(activity=discord.Game(name="Riftlands v1.4.0 Force Sync"))
+    await bot.change_presence(activity=discord.Game(name="Riftlands v1.4.1 Two-Phase Sync + Recap"))
     await bot.wait_until_ready()
-    await hard_reset_and_force_sync()
+    await two_phase_sync()
 
 # --- Commands ---
 
@@ -189,6 +195,21 @@ async def attack_cmd(inter: discord.Interaction, weapon: str, to_hit: str, damag
     dice_ch = get_channel(inter.guild, "dice-checks") or inter.channel
     await dice_ch.send(f"⚔️ **{inter.user.display_name}** — **{weapon.title()}**\nAttack: {atk['breakdown']}\nDamage: {dmg['breakdown']}")
     await inter.response.send_message(f"⚔️ {weapon.title()} — see **#dice-checks**.", ephemeral=False)
+
+@bot.tree.command(name="recap", description="Summarise the current scene.")
+async def recap_cmd(inter: discord.Interaction):
+    g = gstate_for(bot.state, inter.guild.id)
+    scene = g.get("current_scene", {})
+    actions = scene.get("actions", [])
+    msg = f"📜 **Session Recap — Scene: {scene.get('title','Untitled')}**\n"
+    msg += f"• {len(actions)} actions recorded\n"
+    if actions:
+        msg += "• Last actions:\n"
+        for i, a in enumerate(actions[-5:], 1):
+            msg += f"   {i}. {a.get('name','Someone')}: {a.get('content','...')}\n"
+    else:
+        msg += "• No actions recorded yet.\n"
+    await inter.response.send_message(msg, ephemeral=False)
 
 def main():
     if not TOKEN:
